@@ -1,14 +1,14 @@
 {-# OPTIONS -Wall #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE BangPatterns #-}
 
 module Main where
 
-import Debug.Trace
+import Data.Maybe (mapMaybe)
 import Control.Monad
 import Data.List
 import Text.Read (readMaybe)
-import qualified Data.Set as Set
 
 type Pos = (Int, Int, Int)
 type Range = (Int, Int)
@@ -43,86 +43,47 @@ decode = traverse fromLine . lines
       pure r
 
 solution1, solution2 :: Input -> Int
-
 solution1 = applyAll . filter (isNear . snd)
+solution2 = applyAll
 
 isNear :: Cuboid -> Bool
 isNear (rx, ry, rz) = near rx && near ry && near rz
   where
     near (b, e) = b >= -50 && e <= 50
 
-solution2 = applyAll2
-
+-- Inspired by: https://jhidding.github.io/aoc2021/#day-22-reactor-reboot
 applyAll :: Input -> Int
-applyAll = Set.size . go Set.empty
+applyAll = total . foldl' step []
   where
-    go !s [] = s
-    go !s ((f, (rx, ry, rz)) : xs) = go s' xs
-      where
-        s' = (if f then Set.union else Set.difference) s c
-        c = Set.fromList
-          [ (x, y, z)
-          | x <- range rx
-          , y <- range ry
-          , z <- range rz
-          ]
+    total = sum . map (\(c, n) -> volume c * n)
+    step cs (s, c)
+      | s         = enable c cs
+      | otherwise = disable c cs
 
-{-# INLINE range #-}
-range :: (Int, Int) -> [Int]
-range = uncurry enumFromTo
-
-{-# INLINE getRX #-}
-getRX :: Cuboid -> Range
-getRX (rx, _, _) = rx
-
-{-# INLINE getRY #-}
-getRY (_, rx, _) = rx
-getRY :: Cuboid -> Range
-
-{-# INLINE getRZ #-}
-getRZ :: Cuboid -> Range
-getRZ (_, _, rx) = rx
-
-applyAll2 :: Input -> Int
-applyAll2 i = length
-  [ ()
-  | let
-  , (traceShowId -> x) <-range $ traceShowId $ measureBy getRX is
-  , let is' = filter ((`containsR` x) . getRX . snd) is
-  , y <- range $ measureBy getRY is'
-  , let is'' = filter ((`containsR` y) . getRY . snd) is'
-  , z <- range $ measureBy getRZ is''
-  , test (x, y, z) is''
-  ]
+enable, disable :: Cuboid -> [(Cuboid, Int)] -> [(Cuboid, Int)]
+enable c cs = (c, 1) : disable c cs
+disable c cs = mapMaybe chunk cs <> cs
   where
-    is = reverse i
-    test p xs = case filter ((`containsC` p) . snd) xs of
-      ((v, _):_) -> v
-      _          -> False
+    chunk (x, n) = (, negate n) <$> intersectC x c
 
-measureBy :: (Cuboid -> Range) -> Input -> Range
-measureBy getR = foldl' step (0, 0)
-  where
-    step r = merge r . getR . snd
+volume :: Cuboid -> Int
+volume ((x1, x2), (y1, y2), (z1, z2)) =
+  (x2 - x1 + 1) * (y2 - y1 + 1) * (z2 - z1 + 1)
 
-{-# INLINE merge #-}
-merge :: Range -> Range -> Range
-merge (b1, e1) (b2, e2) = (min b1 b2, max e1 e2)
+intersectC :: Cuboid -> Cuboid -> Maybe Cuboid
+intersectC (rx1, ry1, rz1) (rx2, ry2, rz2) = (,,)
+  <$> intersectR rx1 rx2
+  <*> intersectR ry1 ry2
+  <*> intersectR rz1 rz2
 
-{-# INLINE containsC #-}
-containsC :: Cuboid -> Pos -> Bool
-containsC (rx, ry, rz) (x, y, z) =
-     containsR rx x
-  && containsR ry y
-  && containsR rz z
-
-{-# INLINE containsR #-}
-containsR :: Range -> Int -> Bool
-containsR (b, e) x = b <= x && x <= e
+intersectR :: Range -> Range -> Maybe Range
+intersectR (b1, e1) (b2, e2)
+  | e1 < b2 || b1 > e2 = Nothing
+  | otherwise          = Just (max b1 b2, min e1 e2)
 
 selfCheck :: IO ()
 selfCheck = do
   Just i1 <- decode <$> readFile "Day22.example1"
   unless (solution1 i1 == 590784) $ fail "solution1"
   Just i2 <- decode <$> readFile "Day22.example2"
-  unless (solution2 i2 == 0) $ fail "solution2"
+  unless (solution2 i2 == 2758514936282235) $ fail "solution2"
